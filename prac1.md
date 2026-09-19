@@ -131,3 +131,55 @@ testdir/f.c testdir/f2.js
 Файлы py с комментариями:
 testdir/f.py testdir/f2.py
 ```
+
+## Задача 8
+код bash:
+```
+#!/usr/bin/bash
+
+dir=""
+
+# Если нет переданной директории - выходим с ошибкой
+if [ -d "$( realpath "$1" )" ]; then
+        dir="$( realpath "$1" )"
+else
+        echo "Directory '$1' not found" >&2
+        exit 1
+fi
+
+ext=""
+
+# Если расширение неправильное - выходим с ошибкой
+if [[ "$2" == .* && "$2" != *[[:space:]]* ]]; then
+         ext="$2"
+else
+         echo "Invalid extension" >&2
+         exit 1
+fi
+
+files_to_tar=()
+
+# Находим все файлы с нужным расширением, выводим их пути относительно переданной директории и заполняем ими массив
+while read -r file; do
+        files_to_tar+=( "$file" )
+done < <( find "$dir" -type f -name "*$ext" -printf "%P\n" )
+
+# Переходим в переданную директорию и пакуем файлы
+tar -C "$dir" -f "$dir".tar -c "${files_to_tar[@]}"
+```
+
+тестовая директория:
+```
+cloverix@cloverix-MDG-XX:~/xxx$ ls dir
+'file 3.tr'  'file 4.tr'   file1.tr   file2.tr
+```
+
+работа скрипта:
+```
+cloverix@cloverix-MDG-XX:~/xxx$ ./tarext dir .tr
+cloverix@cloverix-MDG-XX:~/xxx$ tar -xvf dir.tar
+file2.tr
+file 4.tr
+file1.tr
+file 3.tr
+```
