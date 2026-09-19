@@ -183,3 +183,33 @@ file 4.tr
 file1.tr
 file 3.tr
 ```
+
+## Задача 10
+код bash:
+```
+#!/usr/bin/bash
+
+dir="$1"
+find "$dir" -maxdepth 1 -type f -size 0 -printf "%P\n"
+```
+
+тестовая директория:
+```
+cloverix@cloverix-MDG-XX:~/xxx$ ls -la files
+total 16
+drwxrwxr-x 2 cloverix cloverix 4096 Sep 19 23:45 .
+drwxrwxr-x 3 cloverix cloverix 4096 Sep 19 23:49 ..
+-rw-rw-r-- 1 cloverix cloverix    0 Sep 19 23:45 file1
+-rw-rw-r-- 1 cloverix cloverix    0 Sep 19 23:45 file2
+-rw-rw-r-- 1 cloverix cloverix    7 Sep 19 23:46 file3
+-rw-rw-r-- 1 cloverix cloverix    0 Sep 19 23:45 file4
+-rw-rw-r-- 1 cloverix cloverix   14 Sep 19 23:46 file5
+```
+
+работа скрипта:
+```
+cloverix@cloverix-MDG-XX:~/xxx$ ./sempty files
+file1
+file2
+file4
+```
