@@ -41,7 +41,7 @@ cloverix@cloverix-MDG-XX:~/test$ ./banner "Hello from RTU MIREA!"
 #!/usr/bin/bash
 
 file=$1
-grep -o -E '[a-zA-Z\_]+' < $file | sort --unique | xargs
+grep -o -E '[a-zA-Z\_]+' < "$file" | sort --unique | xargs
 ```
 
 тестовый файл test.txt:
@@ -83,15 +83,14 @@ idens
 ```
 #!/usr/bin/bash
 
-path=$1
 c_js_files=()
 py_files=()
-for file in `find $1 -type f`; do
+while IFS= read -r file; do
         read -r line < "$file"
 
         if [[ "$file" == *".c" || "$file" == *".js" ]]; then
 
-                if [[ $line == "//"* || $line == "/*"*"*/" ]]; then
+                if [[ $line == "//"* || $line == "/*"* ]]; then
                         c_js_files+=("$file")
                 fi
 
@@ -102,7 +101,7 @@ for file in `find $1 -type f`; do
                 fi
 
         fi
-done
+done < <(find "$1" -type f)
 
 echo "Файлы c и js с комментариями:"
 echo "${c_js_files[*]}"
