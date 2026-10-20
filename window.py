@@ -1,12 +1,14 @@
 import tkinter as tk
 from tkinter import font
+from pathlib import Path
 import getpass
 import platform
-from pathlib import Path
+from configuration import Configuration, parseCLIArgs, parseConfigFile, mergeConfiguration
+import sys
 
 
 class TerminalEmulator:
-    def __init__(self, root, cwd = Path.home()):
+    def __init__(self, root, configuration: Configuration):
         self.root = root
         self.root.title("Терминал")
         self.root.geometry("900x600")
@@ -36,23 +38,27 @@ class TerminalEmulator:
 
         self.username = getpass.getuser()
         self.hostname = platform.node()
-        self.cwd = Path(cwd).expanduser()
-        
-        self.prompt = f"{self.username}@{self.hostname}:{self.cwd}> "
+        self.cwd = configuration.vfs if configuration.vfs is not None else Path.home()
+        self.scriptFile = configuration.script
 
         self.text.bind("<Return>", self.on_enter)
         self.text.bind("<BackSpace>", self.on_backspace)
         self.text.bind("<Key>", self.on_key)
 
         self.print_welcome()
-        self.insert_prompt()
+        scriptResult = self.exec_script()
+        if scriptResult == 0:
+            self.insert_prompt()
 
     def print_welcome(self):
         self.text.insert("end", "Добро пожаловать в эмулятор терминала!\n", "info")
         self.text.insert("end", "Введите 'help' для списка команд.\n\n")
 
+    def get_prompt(self):
+        return f"{self.username}@{self.hostname}:{self.cwd}> "
+
     def insert_prompt(self):
-        self.text.insert("end", self.prompt, "prompt")
+        self.text.insert("end", self.get_prompt(), "prompt")
         self.text.mark_set("insert", "end-1c")
         self.text.see("end")
 
@@ -100,8 +106,9 @@ class TerminalEmulator:
         return "break"
 
     def execute(self, cmd_line):
+        # проверка на пустую команду
         if not cmd_line:
-            return
+            return -1
 
         parts = cmd_line.split()
         cmd, args = parts[0], parts[1:]
@@ -113,15 +120,20 @@ class TerminalEmulator:
             self.write("  clear    - очистить экран\n")
             self.write("  exit     - закрыть терминал\n")
             self.write("  ls       - вывести список содержимого директории\n")
+            return 0
         elif cmd == "echo":
             self.write(" ".join(args) + "\n")
+            return 0
         elif cmd == "clear":
             self.text.delete("1.0", "end")
+            return 0
         elif cmd == "exit":
             self.root.destroy()
+            # возвращаем специальный код, говорящий о том, что окно закрыто
+            return 1
         elif cmd == "ls":
-            if not self.cwd.exists():
-                return
+            if not self.cwd.is_dir():
+                return -1
 
             files = []
             dirs = []
@@ -137,14 +149,61 @@ class TerminalEmulator:
             for fileName in files:
                 self.write(fileName + "  ")
             self.write('\n')
+            return 0
+        elif cmd == "cd":
+            if not args:
+                self.cwd = Path.home()
+                return 0
+            if args[0] == ".":
+                return 0
+            if args[0] == "..":
+                self.cwd = self.cwd.parent
+                return 0
+            target_dir = self.cwd / Path(args[0]).expanduser()
+            if not target_dir.is_dir():
+                self.write(f"{target_dir} не является директорией\n", "error")
+                return 0
+            self.cwd = target_dir
+            return 0
         else:
             self.write(f"Команда не найдена: {cmd}\n", "error")
+            return -1
 
     def write(self, text, tag=None):
         self.text.insert("end", text, tag)
 
+    def exec_script(self):
+        if self.scriptFile is None:
+            return 0
+        commandsRaw = self.scriptFile.read_text(encoding="utf-8").strip().splitlines()
+        commands = []
+        for cmd in commandsRaw:
+            stripped = cmd.strip()
+            if stripped:
+                commands.append(stripped)
+
+        for cmd in commands:
+            self.insert_prompt()
+            self.write(f"{cmd}\n")
+            result = self.execute(cmd)
+            # код 1 = окно закрыто (команда exit)
+            if result == 1:
+                print("Предупреждение: в стартовом скрипте запрещена команда exit", file=sys.stderr)
+                return 1
+            if result == -1:
+                self.write(f"Ошибка в скрипте: команда '{cmd}'\n", "error")
+                self.insert_prompt()
+                return -1
+        self.write('\n')
+        return 0
+
 
 if __name__ == "__main__":
+    conf = parseCLIArgs()
+    if conf.config is not None:
+        xmlConf = parseConfigFile(str(conf.config))
+        conf = mergeConfiguration(conf, xmlConf)
+
     root = tk.Tk()
-    app = TerminalEmulator(root, "foo")
+    app = TerminalEmulator(root, conf)
     root.mainloop()
