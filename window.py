@@ -161,7 +161,7 @@ class TerminalEmulator:
                 return 0
             target_dir = self.cwd / Path(args[0]).expanduser()
             if not target_dir.is_dir():
-                self.write(f"{target_dir} не является директорией\n", "error")
+                self.write(f"'{args[0]}' не является директорией\n", "error")
                 return 0
             self.cwd = target_dir
             return 0
