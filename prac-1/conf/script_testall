@@ -1,0 +1,8 @@
+cd ~/code
+ls
+cd ku
+ls
+cd conf
+cd no_dir
+echo Мы в директории с конфигом и скриптами
+help
