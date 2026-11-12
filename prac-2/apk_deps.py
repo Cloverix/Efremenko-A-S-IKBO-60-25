@@ -159,9 +159,8 @@ class ApkRepo:
         try:
             with tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz") as tf:
                 member = next(
-                    (m for m in tf.getmembers()
-                     if m.name == "APKINDEX" or m.name.endswith("/APKINDEX")),
-                    None,
+                    (m for m in tf.getmembers() if m.name == "APKINDEX" or m.name.endswith("/APKINDEX")),
+                    None
                 )
                 if member is None:
                     raise ConfigError("APKINDEX not found in archive")
@@ -276,3 +275,197 @@ def collect_edges(node: GraphNode,
         if not c.cycle:
             edges.extend(collect_edges(c, seen))
     return edges
+
+
+def load_order(pkg: str,
+               get_deps: Callable[[str], List[str]],
+               max_depth: int) -> List[str]:
+    """Порядок загрузки: зависимости раньше зависящих от них."""
+    order: List[str] = []
+    on_stack: Set[str] = set()
+    done: Set[str] = set()
+
+    def dfs(name: str, depth: int) -> None:
+        if name in done:
+            return
+        on_stack.add(name)
+        if depth < max_depth:
+            try:
+                deps = get_deps(name)
+            except ConfigError:
+                deps = []
+            for d in deps:
+                if d in on_stack:
+                    continue                     # цикл
+                dfs(d, depth + 1)
+        on_stack.discard(name)
+        if name not in done:
+            done.add(name)
+            order.append(name)
+
+    dfs(pkg, 0)
+    return order
+
+
+def apk_load_order_via_cli(pkg: str) -> Optional[List[str]]:
+    try:
+        res = subprocess.run(
+            ["apk", "info", "-R", "-q", pkg],
+            capture_output=True, text=True, timeout=60,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    if res.returncode != 0:
+        return None
+    seen = set()
+    out = []
+    for line in res.stdout.splitlines():
+        n = line.strip()
+        if n and n not in seen:
+            seen.add(n)
+            out.append(n)
+    return out
+
+
+def _tree_label(node: GraphNode) -> str:
+    label = node.name
+    if node.truncated:
+        label += " ..."
+    if node.cycle:
+        label += " (cycle)"
+    if node.missing:
+        label += " (missing)"
+    return label
+
+
+def _print_ascii_node(node: GraphNode, prefix: str, is_last: bool) -> None:
+    print(prefix + ("`-- " if is_last else "|-- ") + _tree_label(node))
+    if node.cycle:
+        return
+    new_prefix = prefix + ("    " if is_last else "|   ")
+    for i, c in enumerate(node.children):
+        _print_ascii_node(c, new_prefix, i == len(node.children) - 1)
+
+
+def print_ascii_tree(root: GraphNode) -> None:
+    print(_tree_label(root))
+    for i, c in enumerate(root.children):
+        _print_ascii_node(c, "", i == len(root.children) - 1)
+
+
+def _mermaid_id(name: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_]", "_", name)
+
+
+def print_mermaid(root: GraphNode) -> None:
+    edges = collect_edges(root)
+    nodes = {root.name}
+    for a, b in edges:
+        nodes.add(a)
+        nodes.add(b)
+    print("graph TD")
+    for n in sorted(nodes):
+        print(f'    {_mermaid_id(n)}["{n}"]')
+    for a, b in edges:
+        print(f"    {_mermaid_id(a)} --> {_mermaid_id(b)}")
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="apk dependency graph visualizer")
+    ap.add_argument("-c", "--config", default="config.ini",
+                    help="path to INI file (default: config.ini)")
+    ap.add_argument("--show-config-only", action="store_true",
+                    help="Stage 1: только вывести параметры и выйти")
+    ap.add_argument("--direct-only", action="store_true",
+                    help="Stage 2: вывести только прямые зависимости")
+    ap.add_argument("--load-order", action="store_true",
+                    help="Stage 4: вывести порядок загрузки и сравнить с apk")
+    args = ap.parse_args()
+
+    # --- этап 1: конфиг ---
+    try:
+        cfg = load_config(Path(args.config))
+    except ConfigError as e:
+        print(f"[config error] {e}", file=sys.stderr)
+        return 2
+
+    print_config(cfg)
+    if args.show_config_only:
+        return 0
+
+    # --- этап 2-3: источник данных ---
+    if cfg.test_mode:
+        try:
+            provider = TestRepo(cfg.test_file)
+        except ConfigError as e:
+            print(f"[test repo error] {e}", file=sys.stderr)
+            return 2
+    else:
+        try:
+            provider = ApkRepo(cfg.repo_url)
+        except ConfigError as e:
+            print(f"[apk repo error] {e}", file=sys.stderr)
+            return 2
+
+    get_deps = provider.get_dependencies
+
+    # проверяем существование заданного пакета
+    try:
+        direct = get_deps(cfg.package)
+    except ConfigError as e:
+        print(f"[package error] {e}", file=sys.stderr)
+        return 2
+
+    # --- этап 2: прямые зависимости ---
+    if args.direct_only:
+        print(f"Direct dependencies of {cfg.package} ({len(direct)}):")
+        for d in direct:
+            print(f"  {d}")
+        return 0
+
+    # --- этап 4: порядок загрузки ---
+    if args.load_order:
+        try:
+            order = load_order(cfg.package, get_deps, cfg.max_depth)
+        except ConfigError as e:
+            print(f"[load order error] {e}", file=sys.stderr)
+            return 2
+        print(f"Load order for {cfg.package} (max_depth={cfg.max_depth}):")
+        for i, n in enumerate(order, 1):
+            print(f"  {i}. {n}")
+
+        if not cfg.test_mode:
+            real = apk_load_order_via_cli(cfg.package)
+            print()
+            if real is None:
+                print("[comparison] apk CLI недоступен или команда не удалась")
+            else:
+                print("[comparison] apk info -R -q:")
+                for n in real:
+                    print(f"  {n}")
+                if real != order:
+                    print(
+                        "\n[diff] Порядок отличается. Возможные причины:\n"
+                        "  - apk раскрывает виртуальные provides (so:/cmd:),\n"
+                        "  - учитывает приоритеты репозиториев и пиннинг версий,\n"
+                        "  - у apk свой порядок обхода, а мы идём в порядке,\n"
+                        "    в котором зависимости перечислены в APKINDEX."
+                    )
+        return 0
+
+    # --- этап 5: визуализация ---
+    graph = build_graph(cfg.package, get_deps, cfg.max_depth)
+
+    if cfg.ascii_tree:
+        print(f"=== ASCII tree (max_depth={cfg.max_depth}) ===")
+        print_ascii_tree(graph)
+        print()
+
+    print("=== Mermaid diagram ===")
+    print_mermaid(graph)
+    print()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
