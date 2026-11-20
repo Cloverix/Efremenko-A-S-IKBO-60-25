@@ -492,8 +492,9 @@ def _handle_visualization(cfg: Config, get_deps: Callable) -> None:
 
 def _parse_args() -> argparse.Namespace:
     """Парсит аргументы командной строки."""
+    default_conf = Path.home() / Path("code/ku/src/prac-2/config/config.ini")
     ap = argparse.ArgumentParser(description="apk visualizer")
-    ap.add_argument("-c", "--config", default="config/config.ini")
+    ap.add_argument("-c", "--config", default=default_conf)
     ap.add_argument("--show-config-only", action="store_true")
     ap.add_argument("--direct-only", action="store_true")
     ap.add_argument("--load-order", action="store_true")
