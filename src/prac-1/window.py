@@ -29,45 +29,33 @@ class TerminalEmulator:
         self.root.title("Терминал")
         self.root.geometry(WINDOW_GEOMETRY)
         self.root.configure(bg="#0c0c0c")
-
         self.term_font = font.Font(
             family="DejaVu Sans Mono",
             size=FONT_SIZE
         )
-
         self.text = tk.Text(
-            root,
-            bg="#0c0c0c",
-            fg="#cccccc",
+            root, bg="#0c0c0c", fg="#cccccc",
             insertbackground="#cccccc",
             selectbackground="#264f78",
-            font=self.term_font,
-            wrap="word",
-            borderwidth=0,
-            highlightthickness=0,
-            padx=PADDING,
-            pady=PADDING,
+            font=self.term_font, wrap="word",
+            borderwidth=0, highlightthickness=0,
+            padx=PADDING, pady=PADDING
         )
         self.text.pack(fill="both", expand=True)
-
         self.text.tag_config("prompt", foreground="#4ec9b0")
         self.text.tag_config("error", foreground="#f44747")
         self.text.tag_config("success", foreground="#6a9955")
         self.text.tag_config("info", foreground="#569cd6")
-
         self.username = getpass.getuser()
         self.hostname = platform.node()
         self.cwd = configuration.vfs or Path.home()
         self.script_file = configuration.script
-
         self.text.bind("<Return>", self.on_enter)
         self.text.bind("<BackSpace>", self.on_backspace)
         self.text.bind("<Key>", self.on_key)
-
         self.print_welcome()
         script_result = self.execute_script()
-        if script_result == RET_SUCCESS:
-            self.insert_prompt()
+        if script_result == RET_SUCCESS: self.insert_prompt()
 
     def print_welcome(self) -> None:
         """Выводит приветствие."""
@@ -202,7 +190,6 @@ class TerminalEmulator:
         parts = cmd_line.split()
         cmd, args = parts[0], parts[1:]
 
-        # Словарь снижает цикломатическую сложность (Ц1)
         commands = {
             "help": self._cmd_help,
             "echo": self._cmd_echo,

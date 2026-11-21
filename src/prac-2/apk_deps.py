@@ -18,8 +18,6 @@ RET_SUCCESS = 0
 RET_CONFIG_ERROR = 2
 RET_CMD_EXIT = 1
 RET_CMD_NOT_FOUND = -1
-
-# Регулярное выражение вынесено на уровень модуля
 NAME_REGEX = re.compile(r"[A-Z][A-Z0-9_]*")
 
 
